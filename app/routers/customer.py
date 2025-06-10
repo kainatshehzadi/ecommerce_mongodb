@@ -5,13 +5,13 @@ from app.schemas.product import ProductOut
 
 router = APIRouter()
 
-@router.get("/", response_model=list[ProductOut])
+@router.get("/list/products", response_model=list[ProductOut])
 async def list_products():
     db = get_db()
     products = await db.products.find().to_list(length=None)
     return [{**p, "id": str(p["_id"])} for p in products]
 
-@router.get("/{product_id}", response_model=ProductOut)
+@router.get("/read by id/products/{product_id}", response_model=ProductOut)
 async def get_product(product_id: str):
     db = get_db()
     if not ObjectId.is_valid(product_id):

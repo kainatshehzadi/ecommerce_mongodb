@@ -32,6 +32,6 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
-app.include_router(customer.router, prefix="/products", tags=["Products (Customer)"])
-app.include_router(order.router, prefix="/orders", tags=["Orders"])
+app.include_router(customer.router,tags=["Products (Customer)"])
+app.include_router(order.router,tags=["Orders"])
 app.add_exception_handler(RequestValidationError, validation_exception_handler)

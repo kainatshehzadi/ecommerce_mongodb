@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends,status
 from app.schemas.user import UserCreate, Token, UserLogin, UserResponse
 from app.utils.auth import hash_password, verify_password, create_access_token
 from app.db.database import get_db
-from bson import ObjectId
 
 
 router = APIRouter()

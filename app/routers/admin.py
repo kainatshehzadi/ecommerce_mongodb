@@ -11,7 +11,7 @@ from app.schemas.product import ProductCreate, ProductUpdate, ProductOut
 
 router = APIRouter()
 
-@router.post("/create-customer", response_model=UserOut)
+@router.post("/create/users", response_model=UserOut)
 async def create_customer(user: CreateUser, admin=Depends(require_admin)):
     db = get_db()
 
@@ -32,7 +32,7 @@ async def create_customer(user: CreateUser, admin=Depends(require_admin)):
         "username": created_user["username"],
         "phone_num": created_user["phone_num"]
     }
-@router.get("/customers", response_model=list[UserOut])
+@router.get("/Read all/users", response_model=list[UserOut])
 async def get_all_customers(
     db: AsyncIOMotorDatabase = Depends(get_db),
     admin=Depends(require_admin) 
@@ -47,7 +47,7 @@ async def get_all_customers(
     return customers
 
 
-@router.post("/", response_model=ProductOut)
+@router.post("/create/products", response_model=ProductOut)
 async def create_product(
     product_data: ProductCreate,
     db: AsyncIOMotorDatabase = Depends(get_db),
@@ -59,7 +59,7 @@ async def create_product(
     created_product["id"] = str(created_product["_id"])
     return created_product
 
-@router.put("/{product_id}", response_model=ProductOut)
+@router.put("/update/products/{product_id}", response_model=ProductOut)
 async def update_product(product_id: str, update: ProductUpdate, admin=Depends(require_admin)):
     db = get_db()
     if not ObjectId.is_valid(product_id):
@@ -76,7 +76,7 @@ async def update_product(product_id: str, update: ProductUpdate, admin=Depends(r
     return {**updated, "id": str(updated["_id"])}
 
 
-@router.delete("/{product_id}")
+@router.delete("/delete/products/{product_id}")
 async def delete_product(product_id: str, admin=Depends(require_admin)):
     db = get_db()
     if not ObjectId.is_valid(product_id):
@@ -95,7 +95,7 @@ async def get_all_products(admin=Depends(require_admin)):
     cursor = db.products.find()
     products = await cursor.to_list(length=None)
     return [{**p, "id": str(p["_id"])} for p in products]
-@router.get("/orders", response_model=list[OrderOut])
+@router.get("/read all/orders", response_model=list[OrderOut])
 async def get_all_orders(admin=Depends(require_admin)):
     db = get_db()
     orders = await db.orders.find().to_list(length=None)
@@ -108,7 +108,7 @@ async def get_all_orders(admin=Depends(require_admin)):
         } for order in orders
     ]
 
-@router.get("/{order_id}", response_model=OrderOut)
+@router.get("/read by id/orders/{order_id}", response_model=OrderOut)
 async def get_order_detail(order_id: str, admin=Depends(require_admin)):
     db = get_db()
     if not ObjectId.is_valid(order_id):

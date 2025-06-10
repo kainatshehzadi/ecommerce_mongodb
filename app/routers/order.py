@@ -6,7 +6,7 @@ from app.db.database import get_db
 from datetime import datetime, timezone
 router = APIRouter()
 
-@router.post("/", response_model=OrderOut)
+@router.post("/create/orders", response_model=OrderOut)
 async def place_order(order: OrderCreate, customer=Depends(require_customer)):
     db = get_db()
     total = 0
@@ -51,7 +51,7 @@ async def place_order(order: OrderCreate, customer=Depends(require_customer)):
         "created_at": order_record["created_at"]
     }
 
-@router.get("/", response_model=list[OrderOut])
+@router.get("/all/orders", response_model=list[OrderOut])
 async def get_own_orders(customer=Depends(require_customer)):
     db = get_db()
     orders = await db.orders.find({"user_id": ObjectId(customer["id"])}).to_list(length=None)
@@ -66,7 +66,7 @@ async def get_own_orders(customer=Depends(require_customer)):
     ]
 
 
-@router.get("/{order_id}", response_model=OrderOut)
+@router.get("/read by id/orders/{order_id}", response_model=OrderOut)
 async def get_order(order_id: str, customer=Depends(require_customer)):
     db = get_db()
     if not ObjectId.is_valid(order_id):
