@@ -29,6 +29,7 @@ async def place_order(order: OrderCreate, customer=Depends(require_customer)):
         "user_id": ObjectId(customer["id"]),
         "items": [item.dict() for item in validated_items],
         "total_price": total,
+        "status": order_data.status.value,
         "created_at": datetime.now(timezone.utc)
     }
 

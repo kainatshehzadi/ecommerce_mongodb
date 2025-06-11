@@ -1,13 +1,15 @@
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends,Query,status
 from app import db
 from app.db.database import get_db
-from app.schemas.order import OrderOut
+from app.routers import order
+from app.schemas.order import OrderOut, OrderStatusUpdate
 from app.schemas.user import CreateUser, UserOut
 from app.utils.auth import hash_password
 from app.utils.depends import require_admin
 from bson import ObjectId
 from app.schemas.product import ProductCreate, ProductUpdate, ProductOut
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
@@ -15,16 +17,22 @@ router = APIRouter()
 async def create_customer(user: CreateUser, admin=Depends(require_admin)):
     db = get_db()
 
+    if db is None:
+       raise HTTPException(status_code=500, detail="Database not connected!")
+
     existing = await db.users.find_one({"email": user.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists.")
 
     user_dict = user.dict()
     user_dict["password"] = hash_password(user.password)
-    user_dict["role"] = "customer" 
+    user_dict["role"] = "customer"
 
     result = await db.users.insert_one(user_dict)
+    print("Inserted user ID:", result.inserted_id)  
+
     created_user = await db.users.find_one({"_id": result.inserted_id})
+    print("Retrieved user:", created_user)  
 
     return {
         "id": str(created_user["_id"]),
@@ -35,9 +43,9 @@ async def create_customer(user: CreateUser, admin=Depends(require_admin)):
 @router.get("/Read all/users", response_model=list[UserOut])
 async def get_all_customers(
     db: AsyncIOMotorDatabase = Depends(get_db),
-    admin=Depends(require_admin) 
+    admin=Depends(require_admin)
 ):
-    customers_cursor = db.customers.find()
+    customers_cursor = db.users.find({"role": "customer"}) 
     customers = await customers_cursor.to_list(length=100)
 
     for customer in customers:
@@ -46,7 +54,6 @@ async def get_all_customers(
 
     return customers
 
-
 @router.post("/create/products", response_model=ProductOut)
 async def create_product(
     product_data: ProductCreate,
@@ -54,6 +61,7 @@ async def create_product(
     admin = Depends(require_admin)  
 ):
     product_dict = product_data.dict()
+    product_dict['image_url'] = str(product_dict['image_url'])
     result = await db.products.insert_one(product_dict)
     created_product = await db.products.find_one({"_id": result.inserted_id})
     created_product["id"] = str(created_product["_id"])
@@ -61,51 +69,95 @@ async def create_product(
 
 @router.put("/update/products/{product_id}", response_model=ProductOut)
 async def update_product(product_id: str, update: ProductUpdate, admin=Depends(require_admin)):
-    db = get_db()
+    db = get_db() 
     if not ObjectId.is_valid(product_id):
         raise HTTPException(status_code=400, detail="Invalid product ID")
+
     existing = await db.products.find_one({"_id": ObjectId(product_id)})
     if not existing:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    # Convert HttpUrl to string 
+    update_data = update.dict(exclude_unset=True)
+    if 'image_url' in update_data:
+        update_data['image_url'] = str(update_data['image_url'])
+
     await db.products.update_one(
         {"_id": ObjectId(product_id)},
-        {"$set": {k: v for k, v in update.dict().items() if v is not None}}
+        {"$set": update_data}
     )
     updated = await db.products.find_one({"_id": ObjectId(product_id)})
     return {**updated, "id": str(updated["_id"])}
 
 
 @router.delete("/delete/products/{product_id}")
-async def delete_product(product_id: str, admin=Depends(require_admin)):
-    db = get_db()
+async def soft_delete_product(
+    product_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    admin=Depends(require_admin)
+):
     if not ObjectId.is_valid(product_id):
         raise HTTPException(status_code=400, detail="Invalid product ID")
 
-    result = await db.products.delete_one({"_id": ObjectId(product_id)})
-    if result.deleted_count == 0:
+    result = await db.products.update_one(
+        {"_id": ObjectId(product_id)},
+        {"$set": {"is_deleted": True}}
+    )
+
+    print("Matched count:", result.matched_count)
+
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    return {"detail": "Product deleted successfully"}
+    return {"detail": "Product soft-deleted successfully"}
 
 
-@router.get("/product", response_model=list[ProductOut])
-async def get_all_products(admin=Depends(require_admin)):
-    db = get_db()
-    cursor = db.products.find()
-    products = await cursor.to_list(length=None)
-    return [{**p, "id": str(p["_id"])} for p in products]
+
+@router.get("/product")
+async def get_all_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(5, le=1_000),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    admin=Depends(require_admin)
+):
+    filter_query = {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]}
+
+    cursor = db.products.find(filter_query).skip(skip).limit(limit)
+    products = await cursor.to_list(length=limit)
+
+    total_count = await db.products.count_documents(filter_query)
+    total_pages = (total_count + limit - 1) // limit
+
+    product_list = []
+    for p in products:
+        p["id"] = str(p["_id"])  
+        del p["_id"]            
+        product_list.append(p)
+
+    return JSONResponse({
+        "products": product_list,
+        "pagination": {
+            "total_items": total_count,
+            "total_pages": total_pages,
+            "current_page": (skip // limit) + 1,
+            "page_size": limit,
+            "skip": skip
+        }
+    })
 @router.get("/read all/orders", response_model=list[OrderOut])
 async def get_all_orders(admin=Depends(require_admin)):
     db = get_db()
     orders = await db.orders.find().to_list(length=None)
+
     return [
         {
             "id": str(order["_id"]),
-            "user_id": order["user_id"],
+            "user_id": str(order["user_id"]),
             "items": order["items"],
-            "total_price": order["total_price"]
-        } for order in orders
+            "total_price": order["total_price"],
+            "created_at": order.get("created_at")  
+        }
+        for order in orders
     ]
 
 @router.get("/read by id/orders/{order_id}", response_model=OrderOut)
@@ -119,11 +171,13 @@ async def get_order_detail(order_id: str, admin=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Order not found")
 
     return {
-        "id": str(order["_id"]),
-        "user_id": order["user_id"],
-        "items": order["items"],
-        "total_price": order["total_price"]
-    }
+    "id": str(order["_id"]),
+    "user_id": str(order["user_id"]),
+    "items": order["items"],
+    "total_price": order["total_price"],
+    "created_at": order.get("created_at") 
+}
+    
 @router.get("/dashboard", summary="Get basic stats")
 async def get_dashboard_stats(admin=Depends(require_admin)):
     db = get_db()
@@ -138,3 +192,39 @@ async def get_dashboard_stats(admin=Depends(require_admin)):
         "total_orders": total_orders,
         "total_revenue": revenue
     }
+
+
+ALLOWED_STATUSES = {"pending", "confirmed", "shipped", "delivered"}
+
+@router.patch("/admin/orders/{order_id}/status")
+async def update_order_status(
+    order_id: str,
+    status_update: OrderStatusUpdate,
+    admin=Depends(require_admin),
+):
+    db = get_db()
+
+    # Check if the order ID is a valid ObjectId
+    if not ObjectId.is_valid(order_id):
+        raise HTTPException(status_code=400, detail="Invalid order ID format")
+
+    # Validate the new status
+    new_status = status_update.status.lower()
+    if new_status not in ALLOWED_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status '{new_status}'. Allowed values: {', '.join(ALLOWED_STATUSES)}"
+        )
+
+    # Find the order
+    order = await db["orders"].find_one({"_id": ObjectId(order_id)})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Update the order status
+    await db["orders"].update_one(
+        {"_id": ObjectId(order_id)},
+        {"$set": {"status": new_status}}
+    )
+
+    return {"message": f"Order status updated to '{new_status}'"}

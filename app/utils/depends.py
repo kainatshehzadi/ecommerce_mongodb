@@ -1,5 +1,5 @@
 from bson import ObjectId
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 import os
@@ -11,6 +11,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "secretkey")
 ALGORITHM = "HS256"
+
+def get_authorization_token(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    return auth_header.split(" ")[1]
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
@@ -25,18 +31,18 @@ def require_admin(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return payload
 
-async def require_customer(token: str = Depends(oauth2_scheme)):
-    db = get_db()
+async def require_customer(request: Request, db=Depends(get_db)):
+    token = get_authorization_token(request)
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing")
+
     payload = decode_access_token(token)
 
-    print("Decoded Token Payload:", payload)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     user = await db.users.find_one({"email": payload.get("sub")})
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    if user["role"] != "customer":
-        raise HTTPException(status_code=403, detail="Only customers can access this route")
-
-    user["id"] = str(user["_id"])
+    if not user or user["role"] != "customer":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Customer access required")
     return user
