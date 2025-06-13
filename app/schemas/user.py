@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
 from app.constant import UserRole
@@ -13,12 +14,13 @@ class UserCreate(UserBase):
 class CreateUser(UserBase): 
     username: str
     password: str = Field(..., min_length=8)
-    phone_num: str = Field(..., min_length=10, max_length=11)
+    phone: str = Field(..., min_length=10, max_length=11)
 
 class UserOut(UserBase):
     id: str
     username: str
-    phone_num: str
+    phone: Optional[str] 
+
 class MessageResponse(BaseModel):
     message: str
 class UserLogin(BaseModel):

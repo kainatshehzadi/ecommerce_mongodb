@@ -6,6 +6,13 @@ from app.utils.error_handler import validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(title="E-Commerce API")
 
+# Initialize FastAPI app without docs
+app = FastAPI(
+    title="E-commerce API",
+    docs_url=None,    # Disable Swagger UI
+    redoc_url=None,   # Disable ReDoc
+    openapi_url=None  # Disable OpenAPI schema
+)
 @app.on_event("startup")
 async def startup_db_client():
     await connect_to_mongo()
@@ -14,7 +21,7 @@ async def startup_db_client():
 async def root():
     return {"message": "Welcome to the eCommerce API"}
 
-# Allow all for testing (adjust in production)
+# Allow all for testing
 origins = [
     "http://localhost:3000", 
     "https://your-frontend-domain.com",  
